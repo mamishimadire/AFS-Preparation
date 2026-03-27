@@ -1,0 +1,79 @@
+@model List<AfsWebApp.Models.Client>
+@{
+    ViewData["Title"] = "AFS Preparation System";
+    ViewData["SubTitle"] = "All Clients";
+}
+
+@section TopBarActions {
+    <a class="btn btn-primary" href="/Client/Create">➕ New Client</a>
+}
+
+@if (!Model.Any())
+{
+    <div style="text-align:center;padding:60px 20px">
+        <div style="font-size:48px;margin-bottom:16px">📊</div>
+        <h2 style="font-size:20px;font-weight:700;margin-bottom:8px">No clients yet</h2>
+        <p style="color:var(--text-muted);margin-bottom:24px">Create your first client to start preparing AFS</p>
+        <a class="btn btn-primary btn-lg" href="/Client/Create">Create First Client</a>
+    </div>
+}
+else
+{
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px">
+        @foreach (var client in Model)
+        {
+            <div class="card" style="cursor:pointer" onclick="window.location='/Client/Setup/@client.Id'">
+                <div class="card-header">
+                    @if (!string.IsNullOrEmpty(client.LogoBase64))
+                    {
+                        <img src="data:image/png;base64,@client.LogoBase64" style="height:32px;max-width:80px;object-fit:contain"/>
+                    }
+                    else
+                    {
+                        <div style="width:32px;height:32px;background:var(--brand-lt);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:16px">🏢</div>
+                    }
+                    <div style="flex:1">
+                        <div class="card-title">@client.EntityName</div>
+                        @if (!string.IsNullOrEmpty(client.TradingAs))
+                        {
+                            <div style="font-size:11px;color:var(--text-muted)">t/a @client.TradingAs</div>
+                        }
+                    </div>
+                    <span class="badge badge-@(client.AccountingStandard.Contains("SME")?"success":"assets")">
+                        @client.AccountingStandard
+                    </span>
+                </div>
+                <div class="card-body" style="padding:12px 20px">
+                    <div style="display:flex;gap:16px;flex-wrap:wrap">
+                        <div>
+                            <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase">Registration</div>
+                            <div style="font-size:12px;font-weight:500">@(client.RegistrationNumber ?? "—")</div>
+                        </div>
+                        <div>
+                            <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase">Basis</div>
+                            <div style="font-size:12px;font-weight:500">@(client.IsGoingConcern?"Going Concern":"Non-Going Concern")</div>
+                        </div>
+                        <div>
+                            <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase">Created</div>
+                            <div style="font-size:12px">@client.CreatedAt.ToString("dd MMM yyyy")</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer" style="display:flex;gap:8px">
+                    <a class="btn btn-outline btn-sm" href="/Client/Setup/@client.Id" onclick="event.stopPropagation()">⚙️ Setup</a>
+                    @if (client.FinancialYears?.Any() == true)
+                    {
+                        var fy = client.FinancialYears.First(f => f.IsActive);
+                        <a class="btn btn-primary btn-sm" href="/TrialBalance/WorkingTB?fyId=@fy.Id" onclick="event.stopPropagation()">📋 TB</a>
+                        <a class="btn btn-accent btn-sm" href="/Financials/Index?fyId=@fy.Id" onclick="event.stopPropagation()">📄 Financials</a>
+                    }
+                    <form method="post" action="/Client/Delete/@client.Id" style="margin-left:auto" onclick="event.stopPropagation()">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn btn-ghost btn-sm"
+                                onclick="return confirm('Delete this client?')">🗑</button>
+                    </form>
+                </div>
+            </div>
+        }
+    </div>
+}

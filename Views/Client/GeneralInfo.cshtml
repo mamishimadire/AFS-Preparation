@@ -1,0 +1,29 @@
+@model AfsWebApp.Models.Client
+@{
+    ViewData["Title"] = "General Information";
+}
+
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">General Information</div>
+    </div>
+    <div class="card-body">
+        <table class="table table-bordered">
+            <tbody>
+                <tr><th>Country of incorporation and domicile</th><td>@Model.Country</td></tr>
+                <tr><th>Nature of business and principal activities</th><td>@Model.NatureOfBusiness</td></tr>
+                <tr><th>Directors</th><td>@Model.Director1 @if (!string.IsNullOrEmpty(Model.Director2)) { <span>, @Model.Director2</span> }</td></tr>
+                <tr><th>Registered office</th><td>@Model.RegisteredAddress</td></tr>
+                <tr><th>Holding company</th><td>@Model.HoldingCompany</td></tr>
+                <tr><th>Banker</th><td>@Model.Bankers</td></tr>
+                <tr><th>Auditor</th><td>@Model.Auditors<br/>@Model.AuditorsAddress</td></tr>
+                <tr><th>Secretary</th><td>@Model.CompanySecretary<br/>@Model.CompanySecretaryAddress</td></tr>
+                <tr><th>Legal advisors</th><td>@Model.LegalAdvisors<br/>@Model.LegalAdvisorsAddress</td></tr>
+                <tr><th>Company registration number</th><td>@Model.RegistrationNumber</td></tr>
+                <tr><th>Tax reference number</th><td>@Model.TaxReferenceNumber</td></tr>
+                <tr><th>Level of assurance</th><td>@Model.LevelOfAssurance</td></tr>
+                <tr><th>Preparer</th><td>@Model.PreparedBy<br/>@Model.PreparedByAddress</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>

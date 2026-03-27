@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>@ViewData["Title"] — AFS Preparation System</title>
+    <link rel="stylesheet" href="~/css/app.css"/>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231A6BA0'/><text y='22' x='5' font-size='18' fill='white'>📊</text></svg>"/>
+</head>
+<body>
+<div class="app-layout">
+
+    <!-- Sidebar -->
+    <nav class="sidebar">
+        <div class="sidebar-logo">
+            <img src="/img/system-logo.jpg" alt="Logo" style="width:48px;height:48px;border-radius:8px;object-fit:cover;box-shadow:0 2px 8px #0002;margin-bottom:8px;"/>
+            <div>
+                AFS Preparation System
+                <span>v3.0 — by Mamishi Tonny Madire</span>
+            </div>
+        </div>
+
+        <!-- Prominent Home Button -->
+        <div class="sidebar-section" style="padding-top: 10px; padding-bottom: 0;">
+            <a class="sidebar-item home @(ViewContext.RouteData.Values["controller"]?.ToString()=="Home"?"active":"")" href="/">
+                <span class="icon">🏠</span> Home
+            </a>
+        </div>
+        <div style="height: 8px;"></div>
+
+        @if (ViewBag.ClientId != null || ViewBag.FyId != null)
+        {
+            var cid = ViewBag.ClientId ?? ViewBag.FyId;
+            var fyId = ViewBag.FyId;
+            <div class="sidebar-section">
+                <div class="sidebar-section-label">Workflow</div>
+                <div class="sidebar-steps">
+                    <a class="sidebar-step @(ViewData["Step"]?.ToString()=="1"?"active":"")"
+                       href="/Client/Setup/@cid">
+                        <span class="step-num">1</span> Client Setup
+                    </a>
+                    <a class="sidebar-step @(ViewData["Step"]?.ToString()=="2"?"active":"")"
+                       href="/TrialBalance/WorkingTB/@fyId">
+                        <span class="step-num">2</span> Trial Balance
+                    </a>
+                    <a class="sidebar-step @(ViewData["Step"]?.ToString()=="3"?"active":"")"
+                       href="/Mapping/Index?fyId=@fyId">
+                        <span class="step-num">3</span> Link Accounts
+                    </a>
+                    <a class="sidebar-step @(ViewData["Step"]?.ToString()=="4"?"active":"")"
+                       href="/Financials/Index?fyId=@fyId">
+                        <span class="step-num">4</span> View Financials
+                    </a>
+                </div>
+            </div>
+        }
+
+        <div class="sidebar-section">
+            <div class="sidebar-section-label">Navigation</div>
+            <a class="sidebar-item" href="/Client/Create">
+                <span class="icon">➕</span> New Client
+            </a>
+        </div>
+
+        <div style="flex:1"></div>
+        <div style="padding:16px; font-size:11px; color:rgba(255,255,255,0.3); border-top:1px solid rgba(255,255,255,0.08)">
+            © @DateTime.Now.Year Mamishi Tonny Madire<br/>AFS Preparation System
+        </div>
+    </nav>
+
+    <!-- Main content -->
+    <div class="main-content">
+        <div class="top-bar">
+            <div>
+                <div class="top-bar-title">@ViewData["Title"]</div>
+                @if (ViewData["SubTitle"] != null)
+                {
+                    <div class="top-bar-sub">@ViewData["SubTitle"]</div>
+                }
+            </div>
+            <div class="top-bar-actions">
+                @RenderSection("TopBarActions", required: false)
+            </div>
+        </div>
+
+        <div class="page-body">
+            @if (TempData["Success"] != null)
+            {
+                <div class="alert alert-success">
+                    ✅ @TempData["Success"]
+                    <button class="alert-dismiss btn-ghost btn btn-sm" style="margin-left:auto">✕</button>
+                </div>
+            }
+            @if (TempData["Error"] != null)
+            {
+                <div class="alert alert-danger">⚠️ @TempData["Error"]</div>
+            }
+            @RenderBody()
+        </div>
+    </div>
+</div>
+
+<div id="toast-container" class="toast-container"></div>
+@Html.AntiForgeryToken()
+<script src="~/js/app.js"></script>
+@RenderSection("Scripts", required: false)
+</body>
+</html>

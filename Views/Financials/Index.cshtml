@@ -1,0 +1,631 @@
+@model AfsWebApp.Models.FinancialsVm
+@{
+    var client = Model.Client!;
+    var fy = Model.FinancialYear!;
+    var fyYear = fy.PeriodEnd.Year.ToString();
+    var priorYear = (fy.PeriodEnd.Year - 1).ToString();
+    ViewData["Title"] = "Financial Statements";
+    ViewData["SubTitle"] = $"{client.EntityName} — {fy.YearLabel}";
+    ViewData["Step"] = "4";
+    ViewBag.ClientId = client.Id;
+    ViewBag.FyId = fy.Id;
+    var lbl = client.IsGroup ? "Consolidated and Separate " : "";
+
+    decimal GetSum(params string[] keys) =>
+        keys.SelectMany(k => Model.GroupedByLineItem.TryGetValue(k, out var list) ? list : [])
+            .Sum(a => a.ClosingBalance);
+
+    decimal GetSumPrior(params string[] keys) =>
+        keys.SelectMany(k => Model.GroupedByLineItem.TryGetValue(k, out var list) ? list : [])
+            .Sum(a => a.PriorYearClosing);
+
+    string Fmt(decimal v) {
+        if (v == 0) return "—";
+        var abs = Math.Abs(v);
+        var s = abs.ToString("N2");
+        return v < 0 ? $"({s})" : s;
+    }
+    string FmtBold(decimal v) => Fmt(v);
+}
+
+@section TopBarActions {
+    <button class="btn btn-primary" onclick="window.print()">🖨️ Print / PDF</button>
+    <a class="btn btn-outline btn-sm" href="/TrialBalance/WorkingTB?fyId=@fy.Id">← Edit Mapping</a>
+}
+
+<!-- Accounting equation check -->
+<div class="eq-checker">
+    <div class="eq-box assets">
+        <div class="eq-box-label">Assets</div>
+        <div class="eq-box-value" style="color:var(--success)">@Fmt(Model.TotalAssets)</div>
+    </div>
+    <div style="display:flex;align-items:center;font-size:20px;font-weight:700;color:var(--text-muted)">=</div>
+    <div class="eq-box liab">
+        <div class="eq-box-label">Liabilities</div>
+        <div class="eq-box-value" style="color:var(--danger)">@Fmt(Model.TotalLiabilities)</div>
+    </div>
+    <div style="display:flex;align-items:center;font-size:20px;font-weight:700;color:var(--text-muted)">+</div>
+    <div class="eq-box equity">
+        <div class="eq-box-label">Equity</div>
+        <div class="eq-box-value" style="color:#8B5CF6">@Fmt(Model.TotalEquity)</div>
+    </div>
+    <div style="flex:1"></div>
+    <div class="eq-box @(Model.IsBalanced?"balanced":"unbalanced")">
+        <div class="eq-box-label">Balance Check</div>
+        <div class="eq-box-value" style="color:@(Model.IsBalanced?"var(--success)":"var(--danger)")">
+            @(Model.IsBalanced ? "✅ Balanced" : $"⚠️ Diff: {Fmt(Model.TotalAssets - Model.TotalEquityAndLiabilities)}")
+        </div>
+    </div>
+</div>
+
+<!-- Tab navigation -->
+<div style="display:flex;gap:4px;margin-bottom:20px;border-bottom:2px solid var(--border);padding-bottom:0">
+    @foreach (var (tab, label) in new[]{("sofp","Statement of Financial Position"),("spl","Income Statement"),("sce","Changes in Equity"),("policies","Accounting Policies"),("notes","Notes")})
+    {
+        <button class="btn btn-ghost" style="border-radius:6px 6px 0 0;border-bottom:3px solid transparent;margin-bottom:-2px"
+                id="tab-@tab" onclick="showTab('@tab')">@label</button>
+    }
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- SOFP -->
+<div id="content-sofp" class="tab-content">
+    <div class="fin-statement">
+        <div class="fin-statement-header">
+            <h2>@lbl Statement of Financial Position</h2>
+            <p>As at @fy.PeriodEnd.ToString("dd MMMM yyyy") | Figures in Rand</p>
+        </div>
+        <table class="fin-table">
+            <thead>
+                <tr>
+                    <th style="width:50%">Note</th>
+                    <th style="width:5%">Note</th>
+                    <th style="width:20%">@fyYear</th>
+                    <th style="width:20%">@priorYear</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{
+                    var nca_keys = new[]{"PPE","IA","GOODWILL","INVEST_ASSOC","INVEST_SUBS","FIN_ASSETS","DEFERRED_TAX_A","OTHER_NCA"};
+                    var ca_keys  = new[]{"INVENTORIES","TRADE_REC","INTERCO_REC","CASH","CURRENT_TAX_A","OTHER_CA"};
+                    var eq_keys  = new[]{"SHARE_CAP","SHARE_PREM","RET_EARN","START_LOAN","OTHER_RES","DRAWINGS","NCI"};
+                    var ncl_keys = new[]{"LTD","LOAN_SHARE","LEASE_INCENT_NCL","DEFERRED_TAX_L","PROV_NCL","OTHER_NCL"};
+                    var cl_keys  = new[]{"TRADE_PAY","INTERCO_PAY","BANK_OD","CURRENT_TAX_L","STD","LOAN_SHARE_CL","LEASE_INCENT_CL","DEFERRED_TAX_CL","VAT_PAYABLE","OTHER_CL"};
+
+                    void RenderSofpSection(string title, string[] keys) {
+                        <tr class="section-header"><td colspan="4">@title</td></tr>
+                        int noteIdx = 1;
+                        foreach (var k in keys) {
+                            if (!Model.GroupedByLineItem.ContainsKey(k)) continue;
+                            var items = Model.GroupedByLineItem[k];
+                            var cb = items.Sum(a => a.ClosingBalance);
+                            var ob = items.Sum(a => a.PriorYearClosing);
+                            var label = items.First().AfsLineItemLabel ?? k;
+                            if (cb == 0 && ob == 0) continue;
+                            <tr>
+                                <td class="desc indent">@label</td>
+                                <td style="font-size:11px;color:var(--text-muted)">@noteIdx</td>
+                                <td class="amount">@Fmt(cb)</td>
+                                <td class="amount">@Fmt(ob)</td>
+                            </tr>
+                            noteIdx++;
+                        }
+                    }
+                }
+
+                <tr class="section-header"><td colspan="4">ASSETS</td></tr>
+                <tr class="section-header"><td colspan="4" style="padding-left:24px;font-size:11px">Non-Current Assets</td></tr>
+                @{ RenderSofpSection("", nca_keys); }
+                <!-- PPE (net of Accumulated Depreciation) -->
+                <tr>
+                    <td class="desc indent">Property, Plant and Equipment (net)</td>
+                    <td style="font-size:11px;color:var(--text-muted)"></td>
+                    <td class="amount">
+                        @Fmt((Model.GroupedByLineItem.ContainsKey("PPE") ? Model.GroupedByLineItem["PPE"].Sum(a=>a.ClosingBalance) : 0)
+                            + (Model.GroupedByLineItem.ContainsKey("ACC_DEPR") ? Model.GroupedByLineItem["ACC_DEPR"].Sum(a=>a.ClosingBalance) : 0))
+                    </td>
+                    <td class="amount">
+                        @Fmt((Model.GroupedByLineItem.ContainsKey("PPE") ? Model.GroupedByLineItem["PPE"].Sum(a=>a.PriorYearClosing) : 0)
+                            + (Model.GroupedByLineItem.ContainsKey("ACC_DEPR") ? Model.GroupedByLineItem["ACC_DEPR"].Sum(a=>a.PriorYearClosing) : 0))
+                    </td>
+                </tr>
+                @{ RenderSofpSection("", nca_keys.Where(k => k != "PPE" && k != "ACC_DEPR").ToArray()); }
+                <tr class="subtotal">
+                    <td class="desc" style="padding-left:16px;font-weight:700">Total Non-Current Assets</td>
+                    <td></td>
+                    <td class="amount">@Fmt(nca_keys.SelectMany(k => Model.GroupedByLineItem.TryGetValue(k, out var l) ? l : []).Sum(a=>a.ClosingBalance))</td>
+                    <td class="amount">@Fmt(nca_keys.SelectMany(k => Model.GroupedByLineItem.TryGetValue(k, out var l) ? l : []).Sum(a=>a.PriorYearClosing))</td>
+                </tr>
+                <tr><td colspan="4" style="height:4px"></td></tr>
+                <tr class="section-header"><td colspan="4" style="padding-left:24px;font-size:11px">Current Assets</td></tr>
+                @{ RenderSofpSection("", ca_keys); }
+                <tr class="subtotal">
+                    <td class="desc" style="padding-left:16px;font-weight:700">Total Current Assets</td>
+                    <td></td>
+                    <td class="amount">@Fmt(ca_keys.SelectMany(k => Model.GroupedByLineItem.TryGetValue(k, out var l) ? l : []).Sum(a=>a.ClosingBalance))</td>
+                    <td class="amount">@Fmt(ca_keys.SelectMany(k => Model.GroupedByLineItem.TryGetValue(k, out var l) ? l : []).Sum(a=>a.PriorYearClosing))</td>
+                </tr>
+                <tr class="total">
+                    <td class="desc">TOTAL ASSETS</td><td></td>
+                    <td class="amount">@Fmt(Model.TotalAssets)</td>
+                    <td class="amount">@Fmt(nca_keys.Concat(ca_keys).SelectMany(k => Model.GroupedByLineItem.TryGetValue(k, out var l) ? l : []).Sum(a=>a.PriorYearClosing))</td>
+                </tr>
+
+                <tr><td colspan="4" style="height:8px"></td></tr>
+                <tr class="section-header"><td colspan="4">EQUITY AND LIABILITIES</td></tr>
+                <tr class="section-header"><td colspan="4" style="padding-left:24px;font-size:11px">Equity</td></tr>
+                @{ RenderSofpSection("", eq_keys); }
+                <!-- Always show Retained Earnings -->
+                <tr>
+                    <td class="desc indent">Retained Earnings</td>
+                    <td style="font-size:11px;color:var(--text-muted)"></td>
+                    <td class="amount">
+                        @Fmt(-(Model.GroupedByLineItem.ContainsKey("RET_EARN") ? Model.GroupedByLineItem["RET_EARN"].Sum(a=>a.ClosingBalance) : 0))
+                    </td>
+                    <td class="amount">
+                        @Fmt(-(Model.GroupedByLineItem.ContainsKey("RET_EARN") ? Model.GroupedByLineItem["RET_EARN"].Sum(a=>a.PriorYearClosing) : 0))
+                    </td>
+                </tr>
+                @{ RenderSofpSection("", eq_keys.Where(k => k != "RET_EARN").ToArray()); }
+                <tr class="subtotal">
+                    <td class="desc" style="padding-left:16px;font-weight:700">Total Equity</td>
+                    <td></td>
+                    <td class="amount">@Fmt(Model.TotalEquity)</td>
+                    <td class="amount">@Fmt(-(eq_keys.SelectMany(k => Model.GroupedByLineItem.TryGetValue(k, out var l) ? l : []).Sum(a=>a.PriorYearClosing)))</td>
+                </tr>
+                <tr><td colspan="4" style="height:4px"></td></tr>
+                <tr class="section-header"><td colspan="4" style="padding-left:24px;font-size:11px">Non-Current Liabilities</td></tr>
+                @{ RenderSofpSection("", ncl_keys); }
+                <tr class="subtotal">
+                    <td class="desc" style="padding-left:16px;font-weight:700">Total Non-Current Liabilities</td>
+                    <td></td>
+                    <td class="amount">@Fmt(Model.TotalNonCurrentLiabilities)</td>
+                    <td class="amount">@Fmt(-(ncl_keys.SelectMany(k => Model.GroupedByLineItem.TryGetValue(k, out var l) ? l : []).Sum(a=>a.PriorYearClosing)))</td>
+                </tr>
+                <tr><td colspan="4" style="height:4px"></td></tr>
+                <tr class="section-header"><td colspan="4" style="padding-left:24px;font-size:11px">Current Liabilities</td></tr>
+                @{ RenderSofpSection("", cl_keys); }
+                <tr class="subtotal">
+                    <td class="desc" style="padding-left:16px;font-weight:700">Total Current Liabilities</td>
+                    <td></td>
+                    <td class="amount">@Fmt(Model.TotalCurrentLiabilities)</td>
+                    <td class="amount">@Fmt(-(cl_keys.SelectMany(k => Model.GroupedByLineItem.TryGetValue(k, out var l) ? l : []).Sum(a=>a.PriorYearClosing)))</td>
+                </tr>
+                <tr class="subtotal">
+                    <td class="desc" style="font-weight:700">Total Liabilities</td>
+                    <td></td>
+                    <td class="amount">@Fmt(Model.TotalLiabilities)</td>
+                    <td class="amount"></td>
+                </tr>
+                <tr class="grand-total">
+                    <td class="desc">TOTAL EQUITY AND LIABILITIES</td><td></td>
+                    <td class="amount">@Fmt(Model.TotalEquityAndLiabilities)</td>
+                    <td class="amount"></td>
+                </tr>
+            </tbody>
+        </table>
+        <div style="padding:10px 16px;font-size:11px;color:var(--text-muted)">
+            The notes on pages xx to xx form an integral part of these financial statements.
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- SPL -->
+<div id="content-spl" class="tab-content" style="display:none">
+    <div class="fin-statement">
+        <div class="fin-statement-header">
+            <h2>@lbl Statement of Profit or Loss and Other Comprehensive Income</h2>
+            <p>For the year ended @fy.PeriodEnd.ToString("dd MMMM yyyy") | Figures in Rand</p>
+        </div>
+        <table class="fin-table">
+            <thead>
+                <tr>
+                    <th style="width:55%"></th>
+                    <th style="width:5%">Note</th>
+                    <th style="width:20%">@fyYear</th>
+                    <th style="width:20%">@priorYear</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{
+                    var rev_keys  = new[]{"REV_GOODS","REV_SERVICES","REV_RENTAL","REV_SLP","REV_TRANSPORT","REV_MGMT_FEE"};
+                    var oth_inc   = new[]{"OTHER_INC","INVEST_REV","FV_GAIN"};
+                    var cos_keys  = new[]{"COGS","DIRECT_SERV","COS_TRANSPORT","COS_TRES","DEPR_COS"};
+                    var opex_keys = new[]{"EMP_COST","AUDIT_FEES","DEPR_OPEX","LEASE_EXP","BANK_CHG","IT_EXP","LEGAL","CONSULT","BOARD_FEES","CLEANING","FUEL","FOOD_ENT","PRINT_STAT","INSURANCE","MARKETING","SOFTWARE_SUB","BAD_DEBT","OTHER_OPEX"};
+
+                    int noteN = 1;
+                    void RenderPlSection(string[] keys, bool negate = false) {
+                        foreach (var k in keys) {
+                            if (!Model.GroupedByLineItem.ContainsKey(k)) continue;
+                            var items = Model.GroupedByLineItem[k];
+                            var cb = items.Sum(a => a.ClosingBalance);
+                            var ob = items.Sum(a => a.PriorYearClosing);
+                            if (cb == 0 && ob == 0) continue;
+                            if (negate) { cb = -cb; ob = -ob; }
+                            var label = items.First().AfsLineItemLabel ?? k;
+                            <tr>
+                                <td class="desc indent">@label</td>
+                                <td style="font-size:11px;color:var(--text-muted)">@noteN</td>
+                                <td class="amount">@Fmt(cb)</td>
+                                <td class="amount">@Fmt(ob)</td>
+                            </tr>
+                            noteN++;
+                        }
+                    }
+                }
+
+                <tr class="section-header"><td colspan="4">Revenue</td></tr>
+                @{ RenderPlSection(rev_keys, negate: true); }
+                <tr class="subtotal">
+                    <td class="desc" style="font-weight:700">Total Revenue</td><td></td>
+                    <td class="amount">@Fmt(Model.TotalRevenue)</td>
+                    <td class="amount">@Fmt(-(rev_keys.SelectMany(k => Model.GroupedByLineItem.TryGetValue(k, out var l) ? l : []).Sum(a=>a.PriorYearClosing)))</td>
+                </tr>
+                <tr class="section-header"><td colspan="4">Cost of Sales</td></tr>
+                @{ RenderPlSection(cos_keys); }
+                <tr class="subtotal">
+                    <td class="desc" style="font-weight:700">Total Cost of Sales</td><td></td>
+                    <td class="amount">(@Fmt(Model.TotalCostOfSales))</td>
+                    <td class="amount"></td>
+                </tr>
+                <tr class="@(Model.GrossProfit >= 0 ? "profit":"loss")">
+                    <td class="desc" style="font-weight:700">Gross Profit / (Loss)</td><td></td>
+                    <td class="amount">@Fmt(Model.GrossProfit)</td>
+                    <td class="amount"></td>
+                </tr>
+                <tr class="section-header"><td colspan="4">Other Income</td></tr>
+                @{ RenderPlSection(oth_inc, negate: true); }
+                <tr class="subtotal">
+                    <td class="desc" style="font-weight:700">Total Other Income</td><td></td>
+                    <td class="amount">@Fmt(Model.TotalOtherIncome)</td>
+                    <td class="amount"></td>
+                </tr>
+                <tr class="section-header"><td colspan="4">Operating Expenses</td></tr>
+                @{ RenderPlSection(opex_keys); }
+                <tr class="subtotal">
+                    <td class="desc" style="font-weight:700">Total Operating Expenses</td><td></td>
+                    <td class="amount">(@Fmt(Model.TotalOpex))</td>
+                    <td class="amount"></td>
+                </tr>
+                <tr class="@(Model.OperatingProfit >= 0 ? "profit":"loss")">
+                    <td class="desc" style="font-weight:700">Operating Profit / (Loss)</td><td></td>
+                    <td class="amount">@Fmt(Model.OperatingProfit)</td>
+                    <td class="amount"></td>
+                </tr>
+                <tr>
+                    <td class="desc indent">Finance Costs</td><td></td>
+                    <td class="amount">@Fmt(-Model.TotalFinanceCosts)</td>
+                    <td class="amount"></td>
+                </tr>
+                <tr class="subtotal">
+                    <td class="desc" style="font-weight:700">(Loss) / Profit Before Taxation</td><td></td>
+                    <td class="amount">@Fmt(Model.ProfitBeforeTax)</td>
+                    <td class="amount"></td>
+                </tr>
+                <tr>
+                    <td class="desc indent">Taxation</td><td></td>
+                    <td class="amount">@Fmt(-Model.TaxExpense)</td>
+                    <td class="amount"></td>
+                </tr>
+                <tr class="@(Model.ProfitAfterTax >= 0 ? "profit":"loss")">
+                    <td class="desc" style="font-weight:700">(Loss) / Profit for the Year</td><td></td>
+                    <td class="amount">@Fmt(Model.ProfitAfterTax)</td>
+                    <td class="amount"></td>
+                </tr>
+                <tr>
+                    <td class="desc indent">Other comprehensive income</td><td></td>
+                    <td class="amount">—</td>
+                    <td class="amount">—</td>
+                </tr>
+                <tr class="grand-total">
+                    <td class="desc">Total Comprehensive (Loss) / Income for the Year</td><td></td>
+                    <td class="amount">@Fmt(Model.ProfitAfterTax)</td>
+                    <td class="amount"></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- SCE -->
+<div id="content-sce" class="tab-content" style="display:none">
+    <div class="fin-statement">
+        <div class="fin-statement-header">
+            <h2>@lbl Statement of Changes in Equity</h2>
+            <p>For the year ended @fy.PeriodEnd.ToString("dd MMMM yyyy") | Figures in Rand</p>
+        </div>
+        <table class="fin-table">
+            <thead>
+                <tr>
+                    <th style="width:40%">Figures in Rand</th>
+                    <th>Share Capital</th>
+                    <th>Share Premium</th>
+                    <th>Retained Earnings</th>
+                    <th>Total Equity</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{
+                    var capCb = Model.GroupedByLineItem.TryGetValue("SHARE_CAP",out var cL) ? -cL.Sum(a=>a.ClosingBalance) : 0m;
+                    var capOb = Model.GroupedByLineItem.TryGetValue("SHARE_CAP",out var cOL) ? -cOL.Sum(a=>a.PriorYearClosing) : 0m;
+                    var premCb= Model.GroupedByLineItem.TryGetValue("SHARE_PREM",out var pL) ? -pL.Sum(a=>a.ClosingBalance) : 0m;
+                    var retCb = Model.GroupedByLineItem.TryGetValue("RET_EARN",out var rL) ? -rL.Sum(a=>a.ClosingBalance) : 0m;
+                    // Use mapped OpeningBalance for RET_EARN
+                    var retOb = Model.GroupedByLineItem.TryGetValue("RET_EARN",out var rOL) ? -rOL.Sum(a=>a.OpeningBalance) : 0m;
+                    var totOb = capOb + retOb;
+                }
+                <tr class="section-header"><td colspan="5">Balance at @((fy.PeriodEnd.Year-1)) (Opening)</td></tr>
+                <tr>
+                    <td class="desc indent">Balance at beginning of year</td>
+                    <td class="amount">@Fmt(capOb)</td>
+                    <td class="amount">@Fmt(premCb)</td>
+                    <td class="amount">@Fmt(retOb)</td>
+                    <td class="amount">@Fmt(totOb)</td>
+                </tr>
+                <tr>
+                    <td class="desc indent">(Loss) / Profit for the year</td>
+                    <td class="amount">—</td>
+                    <td class="amount">—</td>
+                    <td class="amount">@Fmt(Model.ProfitAfterTax)</td>
+                    <td class="amount">@Fmt(Model.ProfitAfterTax)</td>
+                </tr>
+                <tr>
+                    <td class="desc indent">Other comprehensive income</td>
+                    <td class="amount">—</td><td class="amount">—</td>
+                    <td class="amount">—</td><td class="amount">—</td>
+                </tr>
+                <tr class="grand-total">
+                    <td class="desc">Balance at @fy.PeriodEnd.ToString("dd MMMM yyyy")</td>
+                    <td class="amount">@Fmt(capCb)</td>
+                    <td class="amount">@Fmt(premCb)</td>
+                    <td class="amount">
+                        @{
+                            // Calculate closing retained earnings: opening + profit/loss + OCI (assume OCI = 0 for now)
+                            var closingRet = retOb + Model.ProfitAfterTax;
+                        }
+                        @Fmt(closingRet)
+                    </td>
+                    <td class="amount">@Fmt(capCb + premCb + (retOb + Model.ProfitAfterTax))</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- ACCOUNTING POLICIES -->
+<div id="content-policies" class="tab-content" style="display:none">
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">📜 Summary of Significant Accounting Policies</div>
+            <span class="badge badge-success">@client.AccountingStandard</span>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info" style="margin-bottom:16px">
+                <span>💡</span>
+                <div>
+                    Policies are auto-generated from the <b>@client.AccountingStandard</b> standard based on your mapped accounts.
+                    You can edit any policy, or click <b>🌐 Search Internet</b> to fetch the latest standard text from the IFRS Foundation.
+                </div>
+            </div>
+
+            <!-- Basis of preparation -->
+            <div class="policy-card">
+                <div class="policy-card-header">
+                    <span class="policy-card-title">1. Basis of Preparation</span>
+                    <span class="chevron">▼</span>
+                </div>
+                <div class="policy-card-body">
+                    <div class="form-group">
+                        <textarea class="form-control" rows="4" style="font-size:12px">The financial statements have been prepared on a @(client.IsGoingConcern?"going concern":"non-going concern") basis in accordance with the @client.AccountingStandard Accounting Standards and the Companies Act, No. 71 of 2008, of South Africa. The financial statements have been prepared on the historical cost basis, except where stated. Presented in South African Rands (R).</textarea>
+                    </div>
+                </div>
+            </div>
+
+            @{ int pn = 2; }
+            @foreach (var pol in Model.Policies)
+            {
+                <div class="policy-card" data-key="@pol.AfsLineItemKey">
+                    <div class="policy-card-header">
+                        <span class="policy-card-title">@pn. @pol.Title</span>
+                        <div style="display:flex;gap:8px;align-items:center">
+                            @if (pol.SourceUrl != null)
+                            {
+                                <span class="badge badge-neutral" style="font-size:10px">@pol.SourceUrl</span>
+                            }
+                            @if (pol.IsEdited)
+                            {
+                                <span class="badge badge-warn" style="font-size:10px">✏️ Edited</span>
+                            }
+                            <span class="chevron">▼</span>
+                        </div>
+                    </div>
+                    <div class="policy-card-body">
+                        <div class="form-row" style="margin-bottom:10px">
+                            <div class="form-group">
+                                <label class="form-label">Policy Title</label>
+                                <input class="form-control pol-title" value="@pol.Title" style="font-size:12px"/>
+                            </div>
+                            <div class="form-group" style="display:flex;align-items:flex-end;gap:8px">
+                                <button class="btn btn-outline btn-sm" style="white-space:nowrap"
+                                        onclick="fetchLivePolicy('@client.AccountingStandard','@pol.AfsLineItemKey','@pol.Title',
+                                            this.closest('.policy-card').querySelector('.pol-title'),
+                                            this.closest('.policy-card').querySelector('.pol-text'))">
+                                    🌐 Search Internet
+                                </button>
+                                <button class="btn btn-success btn-sm"
+                                        onclick="savePolicy(@client.Id,'@client.AccountingStandard','@pol.AfsLineItemKey',
+                                            this.closest('.policy-card').querySelector('.pol-title'),
+                                            this.closest('.policy-card').querySelector('.pol-text'))">
+                                    💾 Save
+                                </button>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Policy Text</label>
+                            <textarea class="form-control pol-text" rows="6" style="font-size:12px;font-family:'DM Sans',sans-serif">@pol.PolicyText</textarea>
+                        </div>
+                        <div class="policy-ref">Reference: @pol.SourceUrl</div>
+                    </div>
+                </div>
+                pn++;
+            }
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
+<!-- NOTES -->
+<div id="content-notes" class="tab-content" style="display:none">
+    <div class="card">
+        <div class="card-header"><div class="card-title">📝 Notes to the Financial Statements</div></div>
+        <div class="card-body">
+            <p class="form-hint" style="margin-bottom:16px">Figures in Rand. Notes are auto-generated from your mapping.</p>
+            @{
+                int noteNum = 1;
+                var allKeys = Model.GroupedByLineItem.Keys.ToList();
+                // PPE Note: combine PPE and ACC_DEPR
+                if (Model.GroupedByLineItem.ContainsKey("PPE") || Model.GroupedByLineItem.ContainsKey("ACC_DEPR"))
+                {
+                    var ppeItems = Model.GroupedByLineItem.ContainsKey("PPE") ? Model.GroupedByLineItem["PPE"] : new List<AfsWebApp.Models.TbAccount>();
+                    var deprItems = Model.GroupedByLineItem.ContainsKey("ACC_DEPR") ? Model.GroupedByLineItem["ACC_DEPR"] : new List<AfsWebApp.Models.TbAccount>();
+                    var ppeTotal = ppeItems.Sum(a => a.ClosingBalance);
+                    var deprTotal = deprItems.Sum(a => a.ClosingBalance);
+                    var ppePrior = ppeItems.Sum(a => a.PriorYearClosing);
+                    var deprPrior = deprItems.Sum(a => a.PriorYearClosing);
+                    var netTotal = ppeTotal + deprTotal; // deprTotal is negative
+                    var netPrior = ppePrior + deprPrior;
+                <div class="policy-card">
+                    <div class="policy-card-header">
+                        <span class="policy-card-title">Note @noteNum. Property, Plant and Equipment</span>
+                        <div style="display:flex;align-items:center;gap:12px">
+                            <span style="font-family:'DM Mono',monospace;font-size:12px;font-weight:700">@Fmt(netTotal)</span>
+                            <span class="chevron">▼</span>
+                        </div>
+                    </div>
+                    <div class="policy-card-body">
+                        <table class="fin-table" style="margin-bottom:12px">
+                            <thead>
+                                <tr>
+                                    <th style="text-align:left">Description</th>
+                                    <th>@fyYear</th>
+                                    <th>@priorYear</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var acct in ppeItems)
+                                {
+                                    <tr>
+                                        <td class="desc indent">@acct.Description (@acct.AccountNumber)</td>
+                                        <td class="amount">@Fmt(acct.ClosingBalance)</td>
+                                        <td class="amount">@Fmt(acct.PriorYearClosing)</td>
+                                    </tr>
+                                }
+                                @if (deprItems.Any())
+                                {
+                                    <tr>
+                                        <td class="desc indent" style="font-style:italic">Less: Accumulated Depreciation</td>
+                                        <td class="amount">@Fmt(deprTotal)</td>
+                                        <td class="amount">@Fmt(deprPrior)</td>
+                                    </tr>
+                                }
+                                <tr class="subtotal">
+                                    <td class="desc" style="font-weight:700">Total Property, Plant and Equipment</td>
+                                    <td class="amount">@Fmt(netTotal)</td>
+                                    <td class="amount">@Fmt(netPrior)</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="form-group">
+                            <label class="form-label" style="font-size:11px">Additional disclosures for this note:</label>
+                            <textarea class="form-control" rows="3" style="font-size:12px" placeholder="Enter any additional note disclosures..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                noteNum++;
+                }
+            }
+                // Render all other notes as before
+                @foreach (var key in allKeys)
+                {
+                    if (key == "PPE" || key == "ACC_DEPR") continue;
+                <div class="policy-card">
+                    <div class="policy-card-header">
+                        <span class="policy-card-title">Note @noteNum. @(Model.GroupedByLineItem[key].First().AfsLineItemLabel ?? key)</span>
+                        <div style="display:flex;align-items:center;gap:12px">
+                            <span style="font-family:'DM Mono',monospace;font-size:12px;font-weight:700">@Fmt(Model.GroupedByLineItem[key].Sum(a => a.ClosingBalance))</span>
+                            <span class="chevron">▼</span>
+                        </div>
+                    </div>
+                    <div class="policy-card-body">
+                        <table class="fin-table" style="margin-bottom:12px">
+                            <thead>
+                                <tr>
+                                    <th style="text-align:left">Description</th>
+                                    <th>@fyYear</th>
+                                    <th>@priorYear</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var acct in Model.GroupedByLineItem[key])
+                                {
+                                    <tr>
+                                        <td class="desc indent">@acct.Description (@acct.AccountNumber)</td>
+                                        <td class="amount">@Fmt(acct.ClosingBalance)</td>
+                                        <td class="amount">@Fmt(acct.PriorYearClosing)</td>
+                                    </tr>
+                                }
+                                <tr class="subtotal">
+                                    <td class="desc" style="font-weight:700">Total @(Model.GroupedByLineItem[key].First().AfsLineItemLabel ?? key)</td>
+                                    <td class="amount">@Fmt(Model.GroupedByLineItem[key].Sum(a => a.ClosingBalance))</td>
+                                    <td class="amount">@Fmt(Model.GroupedByLineItem[key].Sum(a => a.PriorYearClosing))</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div class="form-group">
+                            <label class="form-label" style="font-size:11px">Additional disclosures for this note:</label>
+                            <textarea class="form-control" rows="3" style="font-size:12px" placeholder="Enter any additional note disclosures..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                noteNum++;
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function showTab(name) {
+    document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('[id^="tab-"]').forEach(btn => {
+        btn.style.borderBottomColor = 'transparent';
+        btn.style.color = '';
+        btn.style.fontWeight = '';
+    });
+    document.getElementById('content-' + name).style.display = '';
+    const btn = document.getElementById('tab-' + name);
+    if (btn) {
+        btn.style.borderBottomColor = 'var(--brand)';
+        btn.style.color = 'var(--brand)';
+        btn.style.fontWeight = '700';
+    }
+}
+document.addEventListener('DOMContentLoaded', () => showTab('sofp'));
+
+window.addEventListener('beforeprint', () => {
+    document.querySelectorAll('.tab-content').forEach(el => el.style.display = '');
+    document.querySelector('.sidebar').style.display = 'none';
+    document.querySelector('.top-bar').style.display = 'none';
+});
+window.addEventListener('afterprint', () => {
+    document.querySelectorAll('.tab-content').forEach((el,i) => el.style.display = i===0?'':'none');
+    document.querySelector('.sidebar').style.display = '';
+    document.querySelector('.top-bar').style.display = '';
+    showTab('sofp');
+});
+</script>
+}

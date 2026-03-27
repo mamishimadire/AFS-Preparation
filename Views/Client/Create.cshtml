@@ -1,0 +1,56 @@
+@model AfsWebApp.Models.Client
+@{
+    ViewData["Title"] = "New Client";
+    ViewData["SubTitle"] = "Create a new AFS engagement";
+}
+
+<div class="card" style="max-width:680px;margin:0 auto">
+    <div class="card-header">
+        <div class="card-title">➕ New Client</div>
+    </div>
+    <form method="post" action="/Client/Create" enctype="multipart/form-data">
+        @Html.AntiForgeryToken()
+        <div class="card-body">
+            <div class="form-group">
+                <label class="form-label required">Entity Name</label>
+                <input name="EntityName" class="form-control" required placeholder="e.g. TUT Enterprise Holdings (Pty) Ltd"/>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Trading As</label>
+                    <input name="TradingAs" class="form-control" placeholder="e.g. TUTEH"/>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Registration Number</label>
+                    <input name="RegistrationNumber" class="form-control" placeholder="e.g. 2018/091105/07"/>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label required">Accounting Standard</label>
+                    <select name="AccountingStandard" class="form-control">
+                        <option value="IFRS for SMEs" selected>IFRS for SMEs</option>
+                        <option value="IFRS Full">IFRS Full</option>
+                        <option value="SA GAAP">SA GAAP</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Going Concern</label>
+                    <select name="IsGoingConcern" class="form-control">
+                        <option value="true" selected>Going Concern</option>
+                        <option value="false">Non-Going Concern</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Company Logo (optional)</label>
+                <input type="file" name="logo" accept="image/*" class="form-control"/>
+                <div class="form-hint">PNG or JPG — appears on AFS cover page</div>
+            </div>
+        </div>
+        <div class="card-footer" style="display:flex;gap:8px">
+            <button type="submit" class="btn btn-primary">Create Client →</button>
+            <a class="btn btn-ghost" href="/">Cancel</a>
+        </div>
+    </form>
+</div>

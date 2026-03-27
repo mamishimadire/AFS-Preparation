@@ -1,0 +1,224 @@
+@model AfsWebApp.Models.WorkingTrialBalanceVm
+@{
+    var fy = Model.FinancialYear!;
+    var client = fy.Client!;
+    ViewData["Title"] = "Working Trial Balance";
+    ViewData["SubTitle"] = $"{client.EntityName} — {fy.YearLabel}";
+    ViewData["Step"] = "2";
+    ViewBag.ClientId = client.Id;
+    ViewBag.FyId = fy.Id;
+}
+
+@section TopBarActions {
+    <button id="btn-automap" class="btn btn-warn" onclick="autoMapAll(@fy.Id)">
+        ✨ Auto-Map All
+    </button>
+    <a class="btn btn-outline btn-sm" href="/Mapping/Index?fyId=@fy.Id">Link Accounts →</a>
+}
+
+<!-- Stats -->
+<div class="stats-strip">
+    <div class="stat-card">
+        <div class="stat-label">Total Accounts</div>
+        <div class="stat-value">@Model.Accounts.Count</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Mapped</div>
+        <div class="stat-value positive">@Model.MappedCount</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Unmapped</div>
+        <div class="stat-value @(Model.UnmappedCount>0?"warning":"positive")">@Model.UnmappedCount</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Total Debits</div>
+        <div class="stat-value" style="font-size:16px">R @Model.TotalDebits.ToString("N2")</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Total Credits</div>
+        <div class="stat-value" style="font-size:16px">R @Model.TotalCredits.ToString("N2")</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Balance Check</div>
+        <div class="stat-value @(Model.IsBalanced?"positive":"negative")">
+            @(Model.IsBalanced ? "✅ OK" : "⚠️ DIFF")
+        </div>
+    </div>
+</div>
+
+<!-- Import -->
+<div class="card">
+    <div class="card-header">
+        <div class="card-title">📥 Import Trial Balance</div>
+    </div>
+    <div class="card-body">
+        <form method="post" action="/TrialBalance/Import" enctype="multipart/form-data"
+              style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="fyId" value="@fy.Id"/>
+            <div id="drop-zone" style="border:2px dashed var(--border);border-radius:8px;padding:12px 20px;
+                 cursor:pointer;display:flex;align-items:center;gap:10px;background:var(--surface)">
+                <span style="font-size:20px">📂</span>
+                <span class="drop-label" style="font-size:13px;color:var(--text-muted)">
+                    Click or drag .xlsx / .csv
+                </span>
+                <input type="file" id="file-input" name="file" accept=".xlsx,.xls,.csv" style="display:none"/>
+            </div>
+            <button type="submit" class="btn btn-primary">Import</button>
+            <div class="form-hint" style="flex-basis:100%">
+                Required columns: <code>Account</code>, <code>Description</code>, <code>Closing</code> (or <code>Balance</code>).
+                Optional: <code>Opening</code>, <code>Transactions</code>, <code>Adjustments</code>, <code>Prior</code>.
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Filter bar -->
+<div class="filter-bar">
+    <form method="get" style="display:flex;gap:8px;flex-wrap:wrap">
+        <input type="hidden" name="fyId" value="@fy.Id"/>
+        <div class="search-input">
+            <span class="icon">🔍</span>
+            <input type="text" name="filter" class="form-control" placeholder="Search account / description..."
+                   value="@ViewBag.Filter" style="width:260px"/>
+        </div>
+        <select name="category" class="form-control" style="width:160px">
+            <option value="">All Categories</option>
+            @foreach (var cat in (string[])ViewBag.Categories)
+            {
+                <option value="@cat" selected="@(ViewBag.Category==cat ? "selected" : null)">@cat</option>
+            }
+        </select>
+        <button type="submit" class="btn btn-outline btn-sm">Filter</button>
+        @if (!string.IsNullOrEmpty(ViewBag.Filter?.ToString()) || !string.IsNullOrEmpty(ViewBag.Category?.ToString()))
+        {
+            <a class="btn btn-ghost btn-sm" href="/TrialBalance/WorkingTB?fyId=@fy.Id">✕ Clear</a>
+        }
+    </form>
+    <div style="margin-left:auto;font-size:12px;color:var(--text-muted)">
+        Showing @Model.Accounts.Count accounts
+    </div>
+</div>
+
+<!-- Working TB Table (Draftworx-style) -->
+<div class="card">
+    <div class="card-header" style="background:var(--brand);border-radius:10px 10px 0 0">
+        <div style="display:flex;gap:16px;color:rgba(255,255,255,0.7);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px">
+            <span style="min-width:100px">Account</span>
+            <span style="min-width:200px">Name</span>
+            <span style="min-width:180px">Link / Category</span>
+            <span style="min-width:260px">AFS Line Item</span>
+            <span style="min-width:80px">Type</span>
+            <span style="min-width:100px;text-align:right">Opening</span>
+            <span style="min-width:100px;text-align:right">Closing</span>
+            <span style="min-width:100px;text-align:right">Prior Year</span>
+        </div>
+    </div>
+    <div class="table-wrap" style="border:none">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Account</th>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>AFS Line Item</th>
+                    <th>Statement</th>
+                    <th class="num">Opening</th>
+                    <th class="num">Closing</th>
+                    <th class="num">Prior Year</th>
+                    <th>Mapped By</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var acct in Model.Accounts)
+                {
+                    var rowClass = !acct.IsMapped ? "unmapped" : (acct.MappedBy == "Needs Review" ? "has-warning" : "");
+                    bool isRetainedEarnings = acct.AfsLineItemKey == "RET_EARN";
+                    <tr class="@rowClass" data-account-id="@acct.Id" data-balance="@acct.ClosingBalance">
+                        <td>
+                            <span style="font-family:'DM Mono',monospace;font-weight:600;color:var(--brand)">@acct.AccountNumber</span>
+                        </td>
+                        <td style="max-width:220px">
+                            <span title="@acct.Description">@acct.Description</span>
+                        </td>
+                        <td>
+                            <select class="form-control sel-category" style="width:140px;font-size:11px">
+                                <option value="">-- Select --</option>
+                                @foreach (var cat in new[]{"Assets","Liabilities","Equity","Income","Expenses"})
+                                {
+                                    <option value="@cat" selected="@(acct.Category==cat ? "selected" : null)">@cat</option>
+                                }
+                            </select>
+                        </td>
+                        <td>
+                            <select class="form-control sel-lineitem" style="width:240px;font-size:11px"
+                                    data-current-value="@acct.AfsLineItemKey">
+                                <option value="">-- Select Line Item --</option>
+                            </select>
+                        </td>
+                        <td>
+                            <span class="badge @(acct.StatementType=="Balance Sheet"?"badge-assets":"badge-expenses")" style="font-size:10px">
+                                @(acct.StatementType ?? "—")
+                            </span>
+                        </td>
+                        <td class="num">
+                            @if (isRetainedEarnings)
+                            {
+                                <form method="post" asp-action="UpdateOpeningRetainedEarnings" asp-controller="TrialBalance" style="display:inline;">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="id" value="@acct.Id" />
+                                    <input type="number" step="0.01" name="openingRetainedEarnings" value="@acct.OpeningBalance" style="width:90px;text-align:right;" />
+                                    <button type="submit" class="btn btn-xs btn-primary" style="margin-left:4px;">Save</button>
+                                </form>
+                            }
+                            else
+                            {
+                                @(acct.OpeningBalance != 0 ? acct.OpeningBalance.ToString("N2") : "—")
+                            }
+                        </td>
+                        <td class="num" style="font-weight:600;color:@(acct.ClosingBalance<0?"var(--danger)":"var(--text)")">
+                            @acct.ClosingBalance.ToString("N2")
+                        </td>
+                        <td class="num">@(acct.PriorYearClosing != 0 ? acct.PriorYearClosing.ToString("N2") : "—")</td>
+                        <td>
+                            @if (acct.MappedBy == "Auto")
+                            {
+                                <span class="badge badge-auto">✨ Auto</span>
+                            }
+                            else if (acct.MappedBy == "Manual")
+                            {
+                                <span class="badge badge-manual">✏️ Manual</span>
+                            }
+                            else if (acct.MappedBy == "Needs Review")
+                            {
+                                <span class="badge badge-warn">⚠️ Review</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-neutral">—</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+            <tfoot>
+                <tr style="background:var(--brand-lt)">
+                    <td colspan="5" style="font-weight:700;padding:10px 12px">TOTALS</td>
+                    <td class="num" style="font-weight:700">@Model.Accounts.Sum(a=>a.OpeningBalance).ToString("N2")</td>
+                    <td class="num" style="font-weight:700">@Model.Accounts.Sum(a=>a.ClosingBalance).ToString("N2")</td>
+                    <td class="num" style="font-weight:700">@Model.Accounts.Sum(a=>a.PriorYearClosing).ToString("N2")</td>
+                    <td></td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    <div class="card-footer" style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-warn" onclick="autoMapAll(@fy.Id)">✨ Auto-Map All Accounts</button>
+        <a class="btn btn-accent" href="/Mapping/Index?fyId=@fy.Id">→ Detailed Mapping View</a>
+        <a class="btn btn-primary" href="/Financials/Index?fyId=@fy.Id">→ View Financials</a>
+        <span class="form-hint" style="margin-left:auto">
+            @Model.MappedCount / @Model.Accounts.Count mapped
+            @if (!Model.IsBalanced) { <span style="color:var(--danger);font-weight:600"> | TB NOT balanced</span> }
+        </span>
+    </div>
+</div>

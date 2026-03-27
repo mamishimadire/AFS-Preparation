@@ -1,0 +1,179 @@
+@model List<AfsWebApp.Models.TbAccount>
+@{
+    var fy = (AfsWebApp.Models.FinancialYear)ViewBag.FinancialYear;
+    var client = fy.Client!;
+    var lineItemsJson = (string)ViewBag.LineItemsJson;
+    ViewData["Title"] = "Link Accounts";
+    ViewData["SubTitle"] = $"{client.EntityName} — Map TB accounts to AFS line items";
+    ViewData["Step"] = "3";
+    ViewBag.ClientId = client.Id;
+    ViewBag.FyId = fy.Id;
+
+    var categories = new[] { "Assets", "Liabilities", "Equity", "Income", "Expenses" };
+    var catColors  = new Dictionary<string,string> {
+        ["Assets"]="success", ["Liabilities"]="danger", ["Equity"]="equity",
+        ["Income"]="income", ["Expenses"]="expenses"
+    };
+}
+
+@section TopBarActions {
+    <button id="btn-automap" class="btn btn-warn" onclick="autoMapAll(@fy.Id)">✨ Auto-Map All</button>
+    <a class="btn btn-primary" href="/Financials/Index?fyId=@fy.Id">→ View Financials</a>
+}
+
+<!-- Accounting equation guide banner -->
+<div class="card" style="margin-bottom:16px;border-left:4px solid var(--brand)">
+    <div class="card-body" style="padding:12px 20px">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center">
+            <span style="font-weight:700;font-size:13px;color:var(--brand)">📐 Accounting Equation Guide</span>
+            @foreach (var cat in categories)
+            {
+                var info = cat switch {
+                    "Assets"      => ("🏦","Debit-normal (positive TB)","SFP"),
+                    "Liabilities" => ("💳","Credit-normal (negative TB)","SFP"),
+                    "Equity"      => ("💼","Credit-normal (negative TB)","SFP"),
+                    "Income"      => ("📈","Credit-normal (negative TB)","SPL"),
+                    "Expenses"    => ("📉","Debit-normal (positive TB)","SPL"),
+                    _             => ("","","")
+                };
+                <div style="display:flex;align-items:center;gap:6px;font-size:12px">
+                    <span class="badge badge-@(catColors[cat])">@info.Item1 @cat</span>
+                    <span style="color:var(--text-muted)">@info.Item2 → @info.Item3</span>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- Stats by category -->
+<div class="stats-strip" style="margin-bottom:16px">
+    <div class="stat-card">
+        <div class="stat-label">Total</div>
+        <div class="stat-value">@Model.Count</div>
+        <div class="stat-sub">accounts</div>
+    </div>
+    @foreach (var cat in categories)
+    {
+        var count = Model.Count(a => a.Category == cat);
+        <div class="stat-card">
+            <div class="stat-label">@cat</div>
+            <div class="stat-value">@count</div>
+        </div>
+    }
+    <div class="stat-card">
+        <div class="stat-label">Unmapped</div>
+        <div class="stat-value warning">@Model.Count(a => !a.IsMapped)</div>
+    </div>
+</div>
+
+<!-- Mapping table -->
+<div class="card">
+    <div class="card-header" style="background:var(--brand)">
+        <div style="display:flex;width:100%;gap:0">
+            <div style="color:rgba(255,255,255,0.8);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;flex:1">Account</div>
+            <div style="color:rgba(255,255,255,0.8);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;width:160px">Category</div>
+            <div style="color:rgba(255,255,255,0.8);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;width:280px">AFS Line Item</div>
+            <div style="color:rgba(255,255,255,0.8);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;width:120px;text-align:right">Closing Balance</div>
+            <div style="color:rgba(255,255,255,0.8);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;width:80px">Mapped</div>
+        </div>
+    </div>
+
+    <div style="padding:8px 16px">
+        @foreach (var acct in Model)
+        {
+            var rowBg = !acct.IsMapped ? "#FFFBEB" : (acct.MappedBy == "Needs Review" ? "#FEF3C7" : "");
+            <div class="mapping-row" data-account-id="@acct.Id" data-balance="@acct.ClosingBalance"
+                 style="background:@rowBg">
+                <div class="mapping-acct">
+                    <div class="acct-no">@acct.AccountNumber</div>
+                    <div class="acct-desc" title="@acct.Description">@acct.Description</div>
+                    <div class="acct-bal" style="color:@(acct.ClosingBalance<0?"var(--danger)":"var(--success)")">
+                        @acct.ClosingBalance.ToString("N2")
+                    </div>
+                </div>
+                <div class="mapping-controls">
+                    <select class="form-control sel-category" style="width:155px;font-size:12px">
+                        <option value="">-- Category --</option>
+                        @foreach (var cat in categories)
+                        {
+                            <option value="@cat" selected="@(acct.Category==cat ? "selected" : null)">@cat</option>
+                        }
+                    </select>
+                    <select class="form-control sel-lineitem" style="width:270px;font-size:12px"
+                            data-current-value="@acct.AfsLineItemKey">
+                        <option value="">-- Select Line Item --</option>
+                    </select>
+                    <button class="btn btn-ghost btn-icon btn-sm" title="Auto-suggest for this account"
+                            onclick="suggestMapping(@acct.Id, this.closest('[data-account-id]'))">💡</button>
+                </div>
+                <div style="min-width:80px;text-align:center">
+                    @if (acct.MappedBy == "Auto")
+                    {
+                        <span class="badge badge-auto">✨ Auto</span>
+                    }
+                    else if (acct.MappedBy == "Manual")
+                    {
+                        <span class="badge badge-manual">✏️ Manual</span>
+                    }
+                    else if (acct.MappedBy == "Needs Review")
+                    {
+                        <span class="badge badge-warn">⚠️ Review</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge-neutral">—</span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    <div class="card-footer" style="display:flex;gap:8px">
+        <button class="btn btn-warn" onclick="autoMapAll(@fy.Id)">✨ Auto-Map All</button>
+        <a class="btn btn-primary" href="/Financials/Index?fyId=@fy.Id">→ View Financials</a>
+        <span class="form-hint" style="margin-left:auto">
+            @Model.Count(a=>a.IsMapped) / @Model.Count mapped
+        </span>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+// Pass line items from server for immediate use
+window._lineItemsPreloaded = @Html.Raw(lineItemsJson);
+document.addEventListener('DOMContentLoaded', () => {
+    // Use preloaded data instead of fetching
+    window._lineItems = window._lineItemsPreloaded;
+    document.querySelectorAll('.sel-category').forEach(catSel => {
+        const rowEl = catSel.closest('[data-account-id]');
+        const liSel = rowEl?.querySelector('.sel-lineitem');
+        if (!liSel) return;
+        populateSubclass(catSel, liSel);
+        const cur = liSel.dataset.currentValue;
+        if (cur) setTimeout(() => { liSel.value = cur; }, 10);
+
+        catSel.addEventListener('change', () => {
+            populateSubclass(catSel, liSel);
+            const bal = parseFloat(rowEl.dataset.balance || '0');
+            const creditCats = ['Liabilities','Equity','Income'];
+            const debitCats  = ['Assets','Expenses'];
+            let warn = '';
+            if (creditCats.includes(catSel.value) && bal > 0.01)
+                warn = `⚠️ ${catSel.value} is credit-normal — positive balance in TB?`;
+            else if (debitCats.includes(catSel.value) && bal < -0.01)
+                warn = `⚠️ ${catSel.value} is debit-normal — negative balance in TB?`;
+            showSignWarning(rowEl, warn);
+        });
+
+        liSel.addEventListener('change', async () => {
+            const accountId = rowEl.dataset.accountId;
+            const category  = catSel.value;
+            const liKey     = liSel.value;
+            const li        = window._lineItems.find(l => l.key === liKey);
+            const stmt      = li?.statement === 'SOFP' ? 'Balance Sheet' : 'Income Statement';
+            if (accountId && category && liKey) await saveMapping(accountId, category, liKey, stmt, '');
+        });
+    });
+});
+</script>
+}

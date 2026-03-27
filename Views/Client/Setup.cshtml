@@ -1,0 +1,278 @@
+@model AfsWebApp.Models.Client
+@{
+    ViewData["Title"] = Model.Id == 0 ? "New Client" : Model.EntityName;
+    ViewData["SubTitle"] = "Client Setup — Quick Settings";
+    ViewData["Step"] = "1";
+    ViewBag.ClientId = Model.Id;
+    var fy = Model.FinancialYears?.FirstOrDefault(f => f.IsActive);
+    ViewBag.FyId = fy?.Id;
+}
+
+@section TopBarActions {
+    @if (fy != null)
+    {
+        <a class="btn btn-outline btn-sm" href="/TrialBalance/WorkingTB?fyId=@fy.Id">Next: Trial Balance →</a>
+    }
+}
+
+<form method="post" action="/Client/@(Model.Id==0?"Create":"Setup")" enctype="multipart/form-data">
+    @Html.AntiForgeryToken()
+    @if (Model.Id != 0) { <input type="hidden" name="Id" value="@Model.Id"/> }
+
+    <!-- Company logo + header -->
+    <div class="card" style="margin-bottom:20px">
+        <div class="card-header">
+            <div class="card-title">🖼️ Company Logo</div>
+        </div>
+        <div class="card-body" style="display:flex;align-items:center;gap:20px">
+            <div class="logo-preview" id="logo-preview">
+                @if (!string.IsNullOrEmpty(Model.LogoBase64))
+                {
+                    <img src="data:image/png;base64,@Model.LogoBase64" id="logo-img"/>
+                }
+                else
+                {
+                    <span style="font-size:24px;color:var(--border)">🏢</span>
+                }
+            </div>
+            <div>
+                <input type="file" name="logo" accept="image/*" id="logo-file"
+                       onchange="previewLogo(this)" style="display:none"/>
+                <button type="button" class="btn btn-outline btn-sm"
+                        onclick="document.getElementById('logo-file').click()">Upload Logo</button>
+                <p class="form-hint">PNG or JPG — displayed on AFS cover page</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Settings (mirrors Draftworx layout exactly) -->
+    <div class="card">
+        <div class="card-header">
+            <div class="card-title">⚙️ Quick Settings</div>
+            <span class="badge badge-neutral">@Model.AccountingStandard</span>
+        </div>
+        <div class="card-body">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label required">Entity Name</label>
+                    <input name="EntityName" class="form-control" value="@Model.EntityName" required/>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Engagement Label</label>
+                    <input name="EngagementLabel" class="form-control" value="@Model.EngagementLabel"/>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Trading As</label>
+                    <input name="TradingAs" class="form-control" value="@Model.TradingAs"/>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Legal Form of Entity</label>
+                    <select name="LegalForm" class="form-control">
+                        @{
+                            var legalForms = new[]{"Private Company","Public Company","SOE","NPO","Partnership","Sole Proprietor","Trust","CC"};
+                        }
+                        @foreach (var opt in legalForms)
+                        {
+                        <option value="@opt" selected="@(Model.LegalForm == opt ? "selected" : null)">@opt</option>
+                        }
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Registration Number</label>
+                    <input name="RegistrationNumber" class="form-control" value="@Model.RegistrationNumber"/>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Tax Reference Number</label>
+                    <input name="TaxReferenceNumber" class="form-control" value="@Model.TaxReferenceNumber"/>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Business Commencement</label>
+                    <input name="BusinessCommencementDate" type="date" class="form-control"
+                           value="@Model.BusinessCommencementDate?.ToString("yyyy-MM-dd")"/>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Date of Signature</label>
+                    <input name="DateOfSignature" type="date" class="form-control"
+                           value="@Model.DateOfSignature?.ToString("yyyy-MM-dd")"/>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Financial Statements Approval Date</label>
+                    <input name="FinancialStatementsApprovalDate" type="date" class="form-control"
+                           value="@Model.FinancialStatementsApprovalDate?.ToString("yyyy-MM-dd")"/>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">AGM Date</label>
+                    <input name="AgmDate" type="date" class="form-control"
+                           value="@Model.AgmDate?.ToString("yyyy-MM-dd")"/>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Place of Signature</label>
+                    <input name="PlaceOfSignature" class="form-control" value="@Model.PlaceOfSignature"/>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Currency Rounding</label>
+                    <select name="CurrencyRounding" class="form-control">
+                        @{
+                            var selDec = Model.CurrencyRounding == "Decimals" ? "selected" : "";
+                            var selTh = Model.CurrencyRounding == "Thousands" ? "selected" : "";
+                            var selMil = Model.CurrencyRounding == "Millions" ? "selected" : "";
+                        }
+                        <option value="Decimals" selected="@(Model.CurrencyRounding == "Decimals" ? "selected" : null)">Decimals (R 1,234.56)</option>
+                        <option value="Thousands" selected="@(Model.CurrencyRounding == "Thousands" ? "selected" : null)">Thousands (R 1,235)</option>
+                        <option value="Millions" selected="@(Model.CurrencyRounding == "Millions" ? "selected" : null)">Millions</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">SoCI Presented by</label>
+                    <select name="IsGroup" class="form-control">
+                        @{
+                            var selFunc = !Model.IsGroup ? "selected" : "";
+                            var selGroup = Model.IsGroup ? "selected" : "";
+                        }
+                        <option value="false" selected="@(!Model.IsGroup ? "selected" : null)">Function (Company)</option>
+                        <option value="true" selected="@(Model.IsGroup ? "selected" : null)">Nature (Group/Consolidated)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label required">Accounting Standard</label>
+                    <select name="AccountingStandard" class="form-control">
+                        @{
+                            var selSm = Model.AccountingStandard == "IFRS for SMEs" ? "selected" : "";
+                            var selFull = Model.AccountingStandard == "IFRS Full" ? "selected" : "";
+                            var selGaap = Model.AccountingStandard == "SA GAAP" ? "selected" : "";
+                        }
+                        <option value="IFRS for SMEs" selected="@(Model.AccountingStandard == "IFRS for SMEs" ? "selected" : null)">IFRS for SMEs</option>
+                        <option value="IFRS Full" selected="@(Model.AccountingStandard == "IFRS Full" ? "selected" : null)">IFRS Full (IFRS 1-18+)</option>
+                        <option value="SA GAAP" selected="@(Model.AccountingStandard == "SA GAAP" ? "selected" : null)">SA GAAP (AC Statements)</option>
+                    </select>
+                    <div class="form-hint">Determines accounting policies applied to the AFS</div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Going Concern</label>
+                    <select name="IsGoingConcern" class="form-control">
+                        @{
+                            var selGC = Model.IsGoingConcern ? "selected" : "";
+                            var selNGC = !Model.IsGoingConcern ? "selected" : "";
+                        }
+                        <option value="true" selected="@(Model.IsGoingConcern ? "selected" : null)">Going Concern basis</option>
+                        <option value="false" selected="@(!Model.IsGoingConcern ? "selected" : null)">Non-Going Concern basis</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firm / General Information -->
+    <div class="card">
+        <div class="card-header"><div class="card-title">🏢 Company & Firm Details</div></div>
+        <div class="card-body">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Bankers</label>
+                    <input name="Bankers" class="form-control" value="@Model.Bankers" placeholder="e.g. Nedbank Limited"/>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Auditor / Firm</label>
+                    <input name="Auditors" class="form-control" value="@Model.Auditors" placeholder="e.g. PricewaterhouseCoopers Inc."/>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Auditor Address</label>
+                    <textarea name="AuditorsAddress" class="form-control" rows="2">@Model.AuditorsAddress</textarea>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Company Secretary</label>
+                    <input name="CompanySecretary" class="form-control" value="@Model.CompanySecretary"/>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Secretary Address</label>
+                    <textarea name="CompanySecretaryAddress" class="form-control" rows="2">@Model.CompanySecretaryAddress</textarea>
+                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Legal Advisors</label>
+                                    <input name="LegalAdvisors" class="form-control" value="@Model.LegalAdvisors"/>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Legal Advisors Address</label>
+                                    <textarea name="LegalAdvisorsAddress" class="form-control" rows="2">@Model.LegalAdvisorsAddress</textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Level of Assurance</label>
+                                    <input name="LevelOfAssurance" class="form-control" value="@Model.LevelOfAssurance"/>
+                                </div>
+                <div class="form-group">
+                    <label class="form-label">Prepared By</label>
+                    <input name="PreparedBy" class="form-control" value="@Model.PreparedBy"/>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Preparer Address</label>
+                    <textarea name="PreparedByAddress" class="form-control" rows="2">@Model.PreparedByAddress</textarea>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Director 1 (Signature)</label>
+                    <input name="Director1" class="form-control" value="@Model.Director1"/>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Director 2 (Signature)</label>
+                    <input name="Director2" class="form-control" value="@Model.Director2"/>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Holding Company</label>
+                <input name="HoldingCompany" class="form-control" value="@Model.HoldingCompany"/>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Registered / Business Address</label>
+                <textarea name="RegisteredAddress" class="form-control" rows="2">@Model.RegisteredAddress</textarea>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Nature of Business</label>
+                <textarea name="NatureOfBusiness" class="form-control" rows="2"
+                    placeholder="Provide a description of the nature of the entity's operations and its principal activities">@Model.NatureOfBusiness</textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Country</label>
+                    <input name="Country" class="form-control" value="@(Model.Country ?? "South Africa")"/>
+                </div>
+            </div>
+        </div>
+        <div class="card-footer">
+            <button type="submit" class="btn btn-primary">💾 Save Client Settings</button>
+            @if (fy != null)
+            {
+                <a class="btn btn-accent" href="/TrialBalance/WorkingTB?fyId=@fy.Id" style="margin-left:8px">
+                    Next: Capture Trial Balance →
+                </a>
+            }
+        </div>
+    </div>
+</form>
+
+<script>
+function previewLogo(input) {
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = e => {
+            const prev = document.getElementById('logo-preview');
+            prev.innerHTML = `<img src="${e.target.result}" id="logo-img" style="max-height:56px;max-width:180px;object-fit:contain"/>`;
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
+</script>
